@@ -1,25 +1,44 @@
 import * as React from 'react';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import type { Market } from '../../../types';
-import { useRealtimeSeries } from '../../../hooks/useRealtimePrices';
+import { useGetMarketHistory } from '../../../api';
+import type { HistoryRange } from '../../../api';
+import { Spinner } from '../../../components/ui/Spinner';
 
-function formatTime(ts: number) {
-  const d = new Date(ts);
-  return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+function tickFormatterFor(range: HistoryRange) {
+  return (ts: number) => {
+    const d = new Date(ts);
+    if (range === '1H') return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+    if (range === '1D') return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+    if (range === '7D' || range === '1M') return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+    return d.toLocaleDateString('es-ES', { month: 'short' });
+  };
+}
+
+function labelFormatterFor(range: HistoryRange) {
+  return (ts: number) => {
+    const d = new Date(ts);
+    if (range === '1H') return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    if (range === '1D') return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    if (range === '7D' || range === '1M') return d.toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit' });
+    return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
 }
 
 export function MarketChart({ market }: { market: Market }) {
-  const [range, setRange] = React.useState<'1H' | '1D' | '7D'>('1D');
-  const interval = range === '1H' ? 10_000 : range === '1D' ? 10_000 : 10_000; // keep simple 10s
-  const maxPoints = range === '1H' ? 60 : range === '1D' ? 180 : 240;
-  const series = useRealtimeSeries(market.priceYesCents, interval, maxPoints);
+  const ranges: HistoryRange[] = ['1H', '1D', '7D', '1M', '1Y'];
+  const [range, setRange] = React.useState<HistoryRange>('1D');
+  const { data: history, isLoading } = useGetMarketHistory(market.id, range);
+  const series = history ?? [];
+  const tickFormatter = React.useMemo(() => tickFormatterFor(range), [range]);
+  const tooltipLabelFormatter = React.useMemo(() => labelFormatterFor(range), [range]);
 
   return (
     <section aria-labelledby="chart-title" className="rounded-[4px] border border-stroke bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 id="chart-title" className="text-sm font-semibold">Precio SÍ (¢)</h3>
         <div className="flex items-center gap-2">
-          {(['1H','1D','7D'] as const).map((r) => (
+          {ranges.map((r) => (
             <button
               key={r}
               onClick={() => setRange(r)}
@@ -31,26 +50,23 @@ export function MarketChart({ market }: { market: Market }) {
         </div>
       </div>
       <div className="h-64 w-full">
-        <ResponsiveContainer>
-          <AreaChart data={series} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-            <defs>
-              <linearGradient id="colorYes" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#007BFF" stopOpacity={0.35}/>
-                <stop offset="95%" stopColor="#007BFF" stopOpacity={0}/>
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-            <XAxis dataKey="t" tickFormatter={formatTime} stroke="currentColor" opacity={0.6} />
-            <YAxis domain={[0, 100]} stroke="currentColor" opacity={0.6} />
-            <Tooltip
-              formatter={(v: any) => [`${Math.round(v as number)}¢`, 'SÍ']}
-              labelFormatter={(l) => formatTime(l as number)}
-            />
-            <Area type="monotone" dataKey="yes" stroke="#007BFF" fill="url(#colorYes)" />
-          </AreaChart>
-        </ResponsiveContainer>
+        {isLoading ? (
+          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+            <Spinner />
+          </div>
+        ) : (
+          <ResponsiveContainer>
+            <LineChart data={series} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.08} />
+              <XAxis dataKey="t" tickFormatter={tickFormatter} stroke="currentColor" opacity={0.6} minTickGap={16} />
+              <YAxis domain={[0, 100]} stroke="currentColor" opacity={0.6} />
+              <Tooltip formatter={(v: any) => [`${Math.round(v as number)}¢`, 'SÍ']} labelFormatter={(l) => tooltipLabelFormatter(l as number)} />
+              <Line type="monotone" dataKey="yes" stroke="#F59E0B" dot={false} strokeWidth={2} />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
       </div>
-      <div className="mt-2 text-xs text-muted-foreground">Actualizando cada ~10s (simulado)</div>
+      <div className="mt-2 text-xs text-muted-foreground">Historial simulado para rangos 1H · 1D · 7D · 1M · 1Y</div>
     </section>
   );
 }

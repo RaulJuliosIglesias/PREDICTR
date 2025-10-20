@@ -4,6 +4,8 @@ import type { Market } from '../../../types';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { usePlaceOrder } from '../../../api/portfolioApi';
 import { useToastStore } from '../../../store/useToastStore';
+import { useGetPortfolio } from '../../../api/portfolioApi';
+import { useRealtimePrice } from '../../../hooks/useRealtimePrices';
 
 export type Side = 'YES' | 'NO';
 export type By = 'usd' | 'shares';
@@ -18,18 +20,20 @@ function centsToPrice(cents: number) {
   return cents / 100;
 }
 
-export function useTradeLogic(market: Market) {
-  const { balance, debit } = useAuthStore();
+export function useTradeLogic(market: Market, opts?: { orderType?: 'buy' | 'sell' }) {
+  const { balance, debit, credit } = useAuthStore();
   const toast = useToastStore((s) => s.push);
   const placeOrder = usePlaceOrder();
+  const { data: portfolio } = useGetPortfolio();
+  const { price: yesCentsRt } = useRealtimePrice(market.priceYesCents, 6000);
 
   const form = useForm<TradeForm>({
-    defaultValues: { side: 'YES', by: 'usd', amount: 10 },
+    defaultValues: { side: 'YES', by: 'usd', amount: 0 },
     mode: 'onChange',
   });
 
   const watch = form.watch();
-  const yesPrice = centsToPrice(market.priceYesCents);
+  const yesPrice = centsToPrice(yesCentsRt);
   const noPrice = 1 - yesPrice;
   const price = watch.side === 'YES' ? yesPrice : noPrice;
 
@@ -54,22 +58,33 @@ export function useTradeLogic(market: Market) {
     return Math.min(3, Math.max(0, imp));
   }, [shares]);
 
-  const insufficient = costUSD > balance;
+  const orderType = opts?.orderType ?? 'buy';
+  const availableShares = React.useMemo(() => {
+    const pos = portfolio?.positions.find((p) => p.marketId === market.id && p.side === watch.side);
+    return pos?.shares ?? 0;
+  }, [portfolio, market.id, watch.side]);
+
+  const insufficient = orderType === 'buy' ? costUSD > balance : shares > availableShares;
   const invalidAmount = !watch.amount || watch.amount <= 0;
 
   async function submit() {
     if (invalidAmount) return;
     if (insufficient) return;
-    await placeOrder.mutateAsync({
+    const tx = await placeOrder.mutateAsync({
       market,
       side: watch.side,
       by: watch.by,
       amount: watch.amount,
+      orderType,
     });
-    // Deduct cost from balance to reflect immediate spend
-    debit(costUSD);
+    if (orderType === 'buy') {
+      debit(costUSD);
+    } else {
+      const proceeds = shares * price;
+      credit(proceeds);
+    }
     toast({ type: 'success', message: 'Orden completada' });
-    form.reset({ ...watch, amount: 10 });
+    form.reset({ ...watch, amount: 0 });
   }
 
   return {
@@ -83,6 +98,7 @@ export function useTradeLogic(market: Market) {
       priceImpactCents,
       insufficient,
       invalidAmount,
+      availableShares,
     },
     actions: {
       submit,

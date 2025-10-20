@@ -10,6 +10,13 @@ const mockMarkets: Market[] = [
     totalVolumeUSD: 1245000,
     priceYesCents: 65,
     status: 'open',
+    outcomes: [
+      { id: 'o1', label: '<$60k', probabilityPct: 12, priceYesCents: 12, priceNoCents: 88, volumeUSD: 351784 },
+      { id: 'o2', label: '$60k-$80k', probabilityPct: 31, priceYesCents: 31, priceNoCents: 69, volumeUSD: 90786 },
+      { id: 'o3', label: '$80k-$100k', probabilityPct: 28, priceYesCents: 28, priceNoCents: 72, volumeUSD: 117441 },
+      { id: 'o4', label: '$100k-$120k', probabilityPct: 18, priceYesCents: 18, priceNoCents: 82, volumeUSD: 100613 },
+      { id: 'o5', label: '>$120k', probabilityPct: 11, priceYesCents: 11, priceNoCents: 89, volumeUSD: 141774 },
+    ],
   },
   {
     id: 'm2',
@@ -28,6 +35,12 @@ const mockMarkets: Market[] = [
     totalVolumeUSD: 670000,
     priceYesCents: 42,
     status: 'open',
+    outcomes: [
+      { id: 'o1', label: '-25 bps', probabilityPct: 5, priceYesCents: 5, priceNoCents: 95, volumeUSD: 82000 },
+      { id: 'o2', label: '0 bps', probabilityPct: 38, priceYesCents: 38, priceNoCents: 62, volumeUSD: 120000 },
+      { id: 'o3', label: '+25 bps', probabilityPct: 44, priceYesCents: 44, priceNoCents: 56, volumeUSD: 230000 },
+      { id: 'o4', label: '+50 bps', probabilityPct: 13, priceYesCents: 13, priceNoCents: 87, volumeUSD: 238000 },
+    ],
   },
   {
     id: 'm4',
@@ -72,18 +85,20 @@ function filterMarkets(
   return out;
 }
 
-function seriesFromInitial(initial: number, points: number, stepMs: number): PricePoint[] {
+function seriesFromInitial(initial: number, points: number, stepMs: number, maxDelta = 2): PricePoint[] {
   const arr: PricePoint[] = [];
   let p = initial;
   let t = Date.now() - points * stepMs;
   for (let i = 0; i < points; i++) {
-    const delta = [-2, -1, 0, 1, 2][Math.floor(Math.random() * 5)];
+    const delta = Math.round((Math.random() * 2 - 1) * maxDelta);
     p = Math.max(1, Math.min(99, p + delta));
     t += stepMs;
     arr.push({ t, yes: p });
   }
   return arr;
 }
+
+export type HistoryRange = '1H' | '1D' | '7D' | '1M' | '1Y';
 
 export function useGetMarkets(params?: { category?: MarketCategory | 'Todos'; search?: string }) {
   return useQuery({
@@ -101,13 +116,19 @@ export function useGetMarketById(id: string) {
   });
 }
 
-export function useGetMarketHistory(id: string, range: '1H' | '1D' | '7D' = '1D') {
+export function useGetMarketHistory(id: string, range: HistoryRange = '1D') {
   const base = mockMarkets.find((m) => m.id === id)?.priceYesCents ?? 50;
-  const points = range === '1H' ? 60 : range === '1D' ? 180 : 240;
-  const stepMs = range === '1H' ? 60_000 : range === '1D' ? 5 * 60_000 : 30 * 60_000;
+  const config: Record<HistoryRange, { points: number; stepMs: number; delta: number }> = {
+    '1H': { points: 60, stepMs: 60_000, delta: 3 },
+    '1D': { points: 288, stepMs: 5 * 60_000, delta: 2 },
+    '7D': { points: 336, stepMs: 30 * 60_000, delta: 2 },
+    '1M': { points: 240, stepMs: 3 * 60 * 60_000, delta: 1.5 },
+    '1Y': { points: 365, stepMs: 24 * 60 * 60_000, delta: 1 },
+  };
+  const { points, stepMs, delta } = config[range];
   return useQuery({
     queryKey: ['market-history', id, range],
-    queryFn: async () => seriesFromInitial(base, points, stepMs),
+    queryFn: async () => seriesFromInitial(base, points, stepMs, delta),
     enabled: !!id,
   });
 }
