@@ -20,6 +20,7 @@ export interface Market {
   priceYesCents: number; // 1-99
   status: MarketStatus;
   outcomes?: MarketOutcome[];
+  trend?: 'alcista' | 'bajista' | 'lateral';
 }
 
 export interface PricePoint {
