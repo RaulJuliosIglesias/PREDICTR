@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
 import { useGetMarketById } from '../api';
 import { Spinner } from '../components/ui/Spinner';
 import { MarketChart, TradeBox } from '../features/trade';
@@ -25,6 +25,8 @@ function MarketDetailContent({ data }: { data: Market }) {
   const { price: sheetYesPrice } = useRealtimePrice(data.priceYesCents, 6000);
   const sheetNoPrice = 100 - sheetYesPrice;
   const quickAmounts = [5, 20, 50, 100];
+  const location = useLocation();
+  const initializedFromQuery = React.useRef(false);
 
   React.useEffect(() => {
     trade.form.register('amount', { valueAsNumber: true });
@@ -35,14 +37,40 @@ function MarketDetailContent({ data }: { data: Market }) {
 
   React.useEffect(() => {
     trade.form.setValue('side', sheetSide);
-    trade.form.setValue('by', 'usd');
+    trade.form.setValue('by', sheetOrderType === 'buy' ? 'usd' : 'shares');
   }, [sheetSide]);
 
   React.useEffect(() => {
-    if (sheetOpen) {
-      trade.form.setValue('by', 'usd');
+    trade.form.setValue('by', sheetOrderType === 'buy' ? 'usd' : 'shares');
+  }, [sheetOpen, sheetOrderType]);
+
+  // Initialize from query params once
+  React.useEffect(() => {
+    if (initializedFromQuery.current) return;
+    const qs = new URLSearchParams(location.search);
+    const qOrder = qs.get('order');
+    const qSide = qs.get('side');
+    const qAutoMax = qs.get('autoMax');
+    if (qSide === 'YES' || qSide === 'NO') {
+      setSelectedSide(qSide);
+      setSheetSide(qSide);
+      trade.form.setValue('side', qSide);
     }
-  }, [sheetOpen]);
+    if (qOrder === 'sell' || qOrder === 'buy') {
+      setSheetOrderType(qOrder);
+      trade.form.setValue('by', qOrder === 'buy' ? 'usd' : 'shares');
+    }
+    if (qAutoMax === '1' && qOrder === 'sell') {
+      trade.form.setValue('by', 'shares');
+      setTimeout(() => {
+        const shares = trade.computed.availableShares || 0;
+        if (shares > 0) {
+          trade.form.setValue('amount', Number(shares.toFixed(3)), { shouldDirty: true, shouldTouch: true, shouldValidate: true });
+        }
+      }, 0);
+    }
+    initializedFromQuery.current = true;
+  }, [location.search, trade]);
 
   const addSheetAmount = (delta: number) => {
     const base = Number(trade.values.amount || 0);
@@ -79,7 +107,13 @@ function MarketDetailContent({ data }: { data: Market }) {
           </section>
         ) : (
           <div className="sticky top-14">
-            <TradeBox market={data} selectedOutcome={selectedOutcome} initialSide={selectedSide} />
+            <TradeBox
+              market={data}
+              selectedOutcome={selectedOutcome}
+              initialSide={selectedSide}
+              initialOrderType={sheetOrderType}
+              autoMaxSell={location.search.includes('autoMax=1') && location.search.includes('order=sell')}
+            />
           </div>
         )}
       </div>
@@ -185,7 +219,7 @@ function MarketDetailContent({ data }: { data: Market }) {
                 +${amt}
               </Button>
             ))}
-            <Button type="button" variant="secondary" size="sm" onClick={() => setSheetAmount(balance)}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setSheetAmount(sheetOrderType === 'buy' ? balance : trade.computed.availableShares)}>
               Max
             </Button>
           </div>
@@ -195,7 +229,7 @@ function MarketDetailContent({ data }: { data: Market }) {
             disabled={trade.computed.invalidAmount || trade.computed.insufficient}
             className="w-full h-12 text-lg"
           >
-            {isGuest ? 'Inicia sesión' : `${sheetOrderType === 'buy' ? 'Comprar' : 'Vender'} ${formatCurrency(Number(trade.values.amount || 0))}`}
+            {isGuest ? 'Inicia sesión' : `${sheetOrderType === 'buy' ? 'Comprar' : 'Vender'} ${sheetSide === 'YES' ? 'SÍ' : 'NO'} ${formatCurrency(Number(trade.values.amount || 0))}`}
           </Button>
         </form>
       </Modal>

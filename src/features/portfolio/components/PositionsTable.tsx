@@ -1,6 +1,8 @@
 import * as React from 'react';
 import { useGetPortfolio } from '../../../api/portfolioApi';
 import { useGetMarkets } from '../../../api/marketApi';
+import { Link } from 'react-router-dom';
+import { Button } from '../../../components/ui/Button';
 
 export function PositionsTable() {
   const { data } = useGetPortfolio();
@@ -59,12 +61,21 @@ export function PositionsTable() {
             <th className="px-3 py-2">Precio Prom. (¢)</th>
             <th className="px-3 py-2">Precio Mark (¢)</th>
             <th className="px-3 py-2">G/P No Realizada</th>
+            <th className="px-3 py-2">Acción</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={`${r.marketId}-${r.side}`} className="border-b border-stroke">
-              <td className="px-3 py-2">{r.title}</td>
+              <td className="px-3 py-2">
+                <Link
+                  to={`/markets/${r.marketId}?order=sell&side=${r.side}`}
+                  className="underline-offset-2 hover:underline"
+                  aria-label={`Ir a ${r.title} para operar`}
+                >
+                  {r.title}
+                </Link>
+              </td>
               <td className="px-3 py-2">{r.side}</td>
               <td className="px-3 py-2">{r.shares.toFixed(3)}</td>
               <td className="px-3 py-2">{Math.round(r.avgPriceCents)}</td>
@@ -78,6 +89,11 @@ export function PositionsTable() {
                   </td>
                 );
               })()}
+              <td className="px-3 py-2">
+                <Link to={`/markets/${r.marketId}?order=sell&side=${r.side}&autoMax=1`}>
+                  <Button variant="secondary" size="sm">Vender Max</Button>
+                </Link>
+              </td>
             </tr>
           ))}
         </tbody>

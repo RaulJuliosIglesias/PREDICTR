@@ -10,7 +10,7 @@ import { useRealtimePrice } from '../../../hooks/useRealtimePrices';
 import type { Side } from '../hooks/useTradeLogic';
 import { cn, formatCurrency } from '../../../lib/utils';
 
-export function TradeBox({ market, selectedOutcome, initialSide }: { market: Market; selectedOutcome?: MarketOutcome; initialSide?: Side }) {
+export function TradeBox({ market, selectedOutcome, initialSide, initialOrderType, autoMaxSell }: { market: Market; selectedOutcome?: MarketOutcome; initialSide?: Side; initialOrderType?: 'buy' | 'sell'; autoMaxSell?: boolean }) {
   const { isGuest, balance } = useAuth();
   const [orderType, setOrderType] = React.useState<'buy' | 'sell'>('buy');
   const { form, values, computed, actions } = useTradeLogic(market, { orderType });
@@ -27,10 +27,36 @@ export function TradeBox({ market, selectedOutcome, initialSide }: { market: Mar
   }, [initialSide]);
 
   React.useEffect(() => {
-    if (mode === 'simple') {
-      form.setValue('by', 'usd');
+    if (initialOrderType) {
+      setOrderType(initialOrderType);
     }
-  }, [mode]);
+  }, [initialOrderType]);
+
+  React.useEffect(() => {
+    if (mode === 'simple') {
+      form.setValue('by', orderType === 'buy' ? 'usd' : 'shares');
+    }
+  }, [mode, orderType]);
+
+  React.useEffect(() => {
+    if (mode === 'simple') {
+      form.setValue('by', orderType === 'buy' ? 'usd' : 'shares');
+    }
+  }, [orderType]);
+
+  const autoMaxApplied = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!autoMaxSell) {
+      autoMaxApplied.current = false;
+      return;
+    }
+    if (!autoMaxApplied.current && orderType === 'sell' && computed.availableShares > 0) {
+      autoMaxApplied.current = true;
+      form.setValue('by', 'shares');
+      form.setValue('amount', Number(computed.availableShares.toFixed(3)), { shouldDirty: true, shouldTouch: true, shouldValidate: true });
+    }
+  }, [autoMaxSell, orderType, computed.availableShares]);
 
   const isYes = values.side === 'YES';
 
@@ -41,14 +67,16 @@ export function TradeBox({ market, selectedOutcome, initialSide }: { market: Mar
   const addAmount = (delta: number) => {
     const base = Number(values.amount || 0);
     const next = Math.max(0, base + delta);
-    form.setValue('amount', Number(next.toFixed(2)), { shouldDirty: true, shouldTouch: true, shouldValidate: true });
+    const precision = (values.by === 'usd' ? 2 : 3);
+    form.setValue('amount', Number(next.toFixed(precision)), { shouldDirty: true, shouldTouch: true, shouldValidate: true });
   };
 
   const setAmount = (amt: number) => {
-    form.setValue('amount', Number(amt.toFixed(2)), { shouldDirty: true, shouldTouch: true, shouldValidate: true });
+    const precision = (values.by === 'usd' ? 2 : 3);
+    form.setValue('amount', Number(amt.toFixed(precision)), { shouldDirty: true, shouldTouch: true, shouldValidate: true });
   };
 
-  const quickOptions = [5, 20, 50, 100];
+  const quickOptions = React.useMemo(() => (orderType === 'buy' ? [5, 20, 50, 100] : [1, 5, 10, 25]), [orderType]);
 
   const handleSubmit = form.handleSubmit(async () => {
     if (isGuest) {
@@ -180,7 +208,7 @@ export function TradeBox({ market, selectedOutcome, initialSide }: { market: Mar
                 className="min-w-[80px] border border-stroke bg-background/40 text-xs font-semibold"
                 onClick={() => addAmount(amt)}
               >
-                +${amt}
+                {orderType === 'buy' ? `+$${amt}` : `+${amt}`}
               </Button>
             ))}
             <Button
