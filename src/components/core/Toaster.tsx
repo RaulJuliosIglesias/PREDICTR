@@ -10,8 +10,8 @@ export function Toaster() {
         <div
           key={t.id}
           className={
-            'flex items-start justify-between gap-2 rounded-md border bg-card p-3 shadow-card ' +
-            (t.type === 'success' ? 'border-green-500' : t.type === 'error' ? 'border-danger' : 'border-muted')
+            'flex items-start justify-between gap-2 rounded-[4px] border bg-card p-3 ' +
+            (t.type === 'success' ? 'border-success' : t.type === 'error' ? 'border-danger' : 'border-stroke')
           }
           role="status"
           aria-live="polite"
